@@ -1,0 +1,303 @@
+# =============================================================================
+# Industrial IoT Data Pipeline — Docker Compose
+# Usage: docker compose up -d
+# =============================================================================
+
+services:
+  # ── Message Broker ─────────────────────────────────────────────────────────
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    ports:
+      - "${MOSQUITTO_PORT:-1883}:1883"
+      - "${MOSQUITTO_WS_PORT:-9001}:9001"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    networks:
+      - iot-net
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-i", "healthcheck", "-W", "3"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ── Time-Series Database ───────────────────────────────────────────────────
+  influxdb:
+    image: influxdb:2
+    container_name: influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: ${INFLUXDB_INIT_MODE:-setup}
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_INIT_USERNAME:-admin}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_INIT_PASSWORD:?Set INFLUXDB_INIT_PASSWORD in .env}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUXDB_INIT_ORG:-factory}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUXDB_INIT_BUCKET:-iot}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_INIT_ADMIN_TOKEN:?Set INFLUXDB_INIT_ADMIN_TOKEN in .env}
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    networks:
+      - iot-net
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ── Relational Database ────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-iot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-iot_pipeline}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - iot-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-iot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # ── Object Storage (S3-compatible) ─────────────────────────────────────────
+  minio:
+    image: minio/minio
+    container_name: minio
+    command: server /data --console-address ":9002"
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9002}:9002"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+    volumes:
+      - minio-data:/data
+    networks:
+      - iot-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # ── Visualization & Alerting ───────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana-oss
+    container_name: grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:?Set GF_SECURITY_ADMIN_PASSWORD in .env}
+      INFLUXDB_TOKEN: ${INFLUXDB_INIT_ADMIN_TOKEN:?Set INFLUXDB_INIT_ADMIN_TOKEN in .env}
+      POSTGRES_USER: ${POSTGRES_USER:-iot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-iot_pipeline}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - iot-net
+    depends_on:
+      influxdb:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ── Flow Processing ────────────────────────────────────────────────────────
+  nodered:
+    build:
+      context: ./nodered
+    container_name: nodered
+    ports:
+      - "${NODERED_PORT:-1880}:1880"
+    volumes:
+      - nodered-data:/data
+    environment:
+      NODE_RED_ENABLE_PROJECTS: "false"
+      INFLUXDB_TOKEN: ${INFLUXDB_INIT_ADMIN_TOKEN:?Set INFLUXDB_INIT_ADMIN_TOKEN in .env}
+    networks:
+      - iot-net
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:1880/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  # ── Sensor Simulator ──────────────────────────────────────────────────────
+  simulator:
+    build:
+      context: ./simulator
+    container_name: simulator
+    environment:
+      MQTT_BROKER: mosquitto
+      MQTT_PORT: "1883"
+      ANOMALY_RATE: "0.05"
+    networks:
+      - iot-net
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('mosquitto',1883)); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ── OPC-UA Server + Client ─────────────────────────────────────────────────
+  opcua-server:
+    build:
+      context: ./opcua_server
+    container_name: opcua-server
+    ports:
+      - "${OPCUA_PORT:-4840}:4840"
+    environment:
+      OPCUA_PORT: "4840"
+      INFLUXDB_URL: http://influxdb:8086
+      INFLUXDB_TOKEN: ${INFLUXDB_INIT_ADMIN_TOKEN:?Set INFLUXDB_INIT_ADMIN_TOKEN in .env}
+      INFLUXDB_ORG: ${INFLUXDB_INIT_ORG:-factory}
+      INFLUXDB_BUCKET: ${INFLUXDB_INIT_BUCKET:-iot}
+      OPCUA_POLL_INTERVAL: "5"
+    networks:
+      - iot-net
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('127.0.0.1',4840)); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # ── ERP CSV Ingestion ──────────────────────────────────────────────────────
+  ingestion:
+    build:
+      context: ./ingestion
+    container_name: ingestion
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-iot_pipeline}
+      POSTGRES_USER: ${POSTGRES_USER:-iot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+      MINIO_BUCKET: ${MINIO_BUCKET:-raw-data}
+      CSV_PATH: /app/data/factory_erp.csv
+      INGEST_INTERVAL: "300"
+    networks:
+      - iot-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, sys; sys.exit(0 if os.path.exists('/app/erp_ingest.py') else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # ── Anomaly Detector ───────────────────────────────────────────────────────
+  anomaly-detector:
+    build:
+      context: ./anomaly
+    container_name: anomaly-detector
+    environment:
+      INFLUXDB_URL: http://influxdb:8086
+      INFLUXDB_TOKEN: ${INFLUXDB_INIT_ADMIN_TOKEN:?Set INFLUXDB_INIT_ADMIN_TOKEN in .env}
+      INFLUXDB_ORG: ${INFLUXDB_INIT_ORG:-factory}
+      INFLUXDB_BUCKET: ${INFLUXDB_INIT_BUCKET:-iot}
+      ANOMALY_INTERVAL_SECONDS: ${ANOMALY_INTERVAL_SECONDS:-60}
+      ANOMALY_Z_THRESHOLD: ${ANOMALY_Z_THRESHOLD:-3.0}
+      ANOMALY_WINDOW_MINUTES: ${ANOMALY_WINDOW_MINUTES:-10}
+    networks:
+      - iot-net
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "from influxdb_client import InfluxDBClient; import os; c=InfluxDBClient(url=os.getenv('INFLUXDB_URL'), token=os.getenv('INFLUXDB_TOKEN')); c.ping(); c.close()"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  # ── FastAPI Backend ────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ./api
+    container_name: api
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      INFLUXDB_URL: http://influxdb:8086
+      INFLUXDB_TOKEN: ${INFLUXDB_INIT_ADMIN_TOKEN:?Set INFLUXDB_INIT_ADMIN_TOKEN in .env}
+      INFLUXDB_ORG: ${INFLUXDB_INIT_ORG:-factory}
+      INFLUXDB_BUCKET: ${INFLUXDB_INIT_BUCKET:-iot}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-iot_pipeline}
+      POSTGRES_USER: ${POSTGRES_USER:-iot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    networks:
+      - iot-net
+    depends_on:
+      influxdb:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+networks:
+  iot-net:
+    driver: bridge
+
+volumes:
+  influxdb-data:
+  postgres-data:
+  minio-data:
+  grafana-data:
+  nodered-data:

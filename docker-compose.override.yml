@@ -1,0 +1,38 @@
+# =============================================================================
+# Development Overrides — Hot-reload for Python services
+# Usage: docker compose -f docker-compose.yml -f docker-compose.override.yml up -d --build
+# =============================================================================
+
+services:
+  simulator:
+    volumes:
+      - ./simulator:/app
+    environment:
+      LOG_LEVEL: DEBUG
+
+  opcua-server:
+    volumes:
+      - ./opcua_server:/app
+    environment:
+      LOG_LEVEL: DEBUG
+
+  ingestion:
+    volumes:
+      - ./ingestion:/app
+    environment:
+      INGEST_INTERVAL: "30"
+      LOG_LEVEL: DEBUG
+
+  anomaly-detector:
+    volumes:
+      - ./anomaly:/app
+    environment:
+      ANOMALY_INTERVAL_SECONDS: "15"
+      LOG_LEVEL: DEBUG
+
+  api:
+    volumes:
+      - ./api:/app
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    environment:
+      LOG_LEVEL: DEBUG

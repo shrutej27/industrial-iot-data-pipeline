@@ -1,0 +1,122 @@
+[
+  {
+    "id": "iot-flow-tab",
+    "type": "tab",
+    "label": "MQTT → InfluxDB",
+    "disabled": false,
+    "info": "Subscribes to factory/# MQTT topics and writes sensor readings to InfluxDB."
+  },
+  {
+    "id": "mqtt-broker-config",
+    "type": "mqtt-broker",
+    "name": "Mosquitto",
+    "broker": "mosquitto",
+    "port": "1883",
+    "clientid": "nodered-ingestion",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": "4",
+    "keepalive": "60",
+    "cleansession": true,
+    "autoUnsubscribe": true,
+    "birthTopic": "",
+    "closeTopic": "",
+    "willTopic": "",
+    "sessionExpiry": ""
+  },
+  {
+    "id": "influxdb-config",
+    "type": "influxdb",
+    "hostname": "influxdb",
+    "port": "8086",
+    "protocol": "http",
+    "database": "iot",
+    "name": "InfluxDB",
+    "usetls": false,
+    "tls": "",
+    "influxdbVersion": "2.0",
+    "url": "http://influxdb:8086",
+    "rejectUnauthorized": false
+  },
+  {
+    "id": "mqtt-in-factory",
+    "type": "mqtt in",
+    "z": "iot-flow-tab",
+    "name": "factory/#",
+    "topic": "factory/#",
+    "qos": "1",
+    "datatype": "json",
+    "broker": "mqtt-broker-config",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 130,
+    "y": 200,
+    "wires": [
+      ["format-for-influx"]
+    ]
+  },
+  {
+    "id": "format-for-influx",
+    "type": "function",
+    "z": "iot-flow-tab",
+    "name": "Format for InfluxDB",
+    "func": "const data = msg.payload;\n\nmsg.payload = [\n  {\n    measurement: \"sensor_readings\",\n    tags: {\n      machine_id: data.machine_id,\n      metric: data.metric\n    },\n    fields: {\n      value: data.value\n    },\n    timestamp: new Date(data.timestamp)\n  }\n];\n\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 370,
+    "y": 200,
+    "wires": [
+      ["influxdb-out", "debug-output"]
+    ]
+  },
+  {
+    "id": "influxdb-out",
+    "type": "influxdb batch",
+    "z": "iot-flow-tab",
+    "influxdb": "influxdb-config",
+    "precision": "ms",
+    "retentionPolicy": "",
+    "name": "Write sensor_readings",
+    "database": "iot",
+    "precisionV18FluxV20": "ms",
+    "retentionPolicyV18Flux": "",
+    "org": "factory",
+    "bucket": "iot",
+    "x": 630,
+    "y": 180,
+    "wires": []
+  },
+  {
+    "id": "debug-output",
+    "type": "debug",
+    "z": "iot-flow-tab",
+    "name": "Debug Readings",
+    "active": false,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": true,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "payload[0].tags.machine_id",
+    "statusType": "jsonata",
+    "x": 620,
+    "y": 260,
+    "wires": []
+  },
+  {
+    "id": "comment-node",
+    "type": "comment",
+    "z": "iot-flow-tab",
+    "name": "IoT Sensor Ingestion Pipeline",
+    "info": "This flow:\n1. Subscribes to factory/# MQTT topics\n2. Parses incoming JSON sensor data\n3. Formats it with proper tags (machine_id, metric)\n4. Writes to InfluxDB sensor_readings measurement\n\nRequires: node-red-contrib-influxdb",
+    "x": 210,
+    "y": 80,
+    "wires": []
+  }
+]

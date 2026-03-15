@@ -1,0 +1,34 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes (if accidentally created locally)
+influxdb-data/
+postgres-data/
+minio-data/
+grafana-data/
+
+# Data files
+*.csv
+!ingestion/data/*.csv
+
+# Node-RED credentials (generated at runtime by entrypoint.sh)
+nodered/flows_cred.json
+
+# GitHub config (local only)
+.github/

@@ -1,0 +1,74 @@
+{
+  "uid": "machine-overview",
+  "title": "Machine Overview",
+  "tags": ["iot", "overview"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Machine Registry",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "postgresql" },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT machine_id, name, type, location, commissioned_date FROM machines ORDER BY id",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Latest Readings per Machine",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"iot\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"sensor_readings\")\n  |> filter(fn: (r) => r._field == \"value\")\n  |> last()\n  |> group()\n  |> sort(columns: [\"machine_id\", \"metric\"])"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "OPC-UA Machine Status",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"iot\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"opcua_status\")\n  |> filter(fn: (r) => r._field == \"status\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: if r._value == 0 then \"Running\" else if r._value == 1 then \"Idle\" else \"Fault\"}))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "Running": { "color": "green", "text": "Running" } } },
+            { "type": "value", "options": { "Idle": { "color": "yellow", "text": "Idle" } } },
+            { "type": "value", "options": { "Fault": { "color": "red", "text": "Fault" } } }
+          ]
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Data Quality Summary",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 },
+      "datasource": { "type": "postgres", "uid": "postgresql" },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT issue_type, source, COUNT(*) as count, MAX(detected_at) as last_seen FROM data_quality_log GROUP BY issue_type, source ORDER BY count DESC",
+          "format": "table"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39
+}

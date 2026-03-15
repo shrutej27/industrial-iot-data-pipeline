@@ -1,0 +1,86 @@
+{
+  "uid": "alerts-history",
+  "title": "Alerts History",
+  "tags": ["iot", "alerts"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Active Alerts",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "postgresql" },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT id, machine_id, metric, value, threshold, severity, status, fired_at, acknowledged_at FROM alerts WHERE status = 'active' ORDER BY fired_at DESC LIMIT 50",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "severity" },
+            "properties": [
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  { "type": "value", "options": { "warning": { "color": "yellow" }, "critical": { "color": "red" } } }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "title": "All Alerts (Last 24h)",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
+      "datasource": { "type": "postgres", "uid": "postgresql" },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT id, machine_id, metric, value, threshold, severity, status, fired_at, acknowledged_at, resolved_at FROM alerts WHERE fired_at > NOW() - INTERVAL '24 hours' ORDER BY fired_at DESC",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Alerts by Severity (Last 24h)",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "datasource": { "type": "postgres", "uid": "postgresql" },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT severity, COUNT(*) as count FROM alerts WHERE fired_at > NOW() - INTERVAL '24 hours' GROUP BY severity",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Detected Anomalies",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"iot\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"anomalies\")\n  |> filter(fn: (r) => r._field == \"z_score\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    }
+  ],
+  "schemaVersion": 39
+}

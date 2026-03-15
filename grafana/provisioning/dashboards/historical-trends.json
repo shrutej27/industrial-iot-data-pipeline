@@ -1,0 +1,94 @@
+{
+  "uid": "historical-trends",
+  "title": "Historical Trends",
+  "tags": ["iot", "historical"],
+  "timezone": "browser",
+  "refresh": "",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "machine",
+        "type": "query",
+        "datasource": { "type": "influxdb", "uid": "influxdb" },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"iot\", tag: \"machine_id\")",
+        "multi": true,
+        "includeAll": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Temperature Trend",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"iot\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sensor_readings\")\n  |> filter(fn: (r) => r.metric == \"temperature\")\n  |> filter(fn: (r) => r._field == \"value\")\n  |> filter(fn: (r) => r.machine_id =~ /^${machine:regex}$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "celsius" } }
+    },
+    {
+      "id": 2,
+      "title": "RPM Trend",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"iot\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sensor_readings\")\n  |> filter(fn: (r) => r.metric == \"rpm\")\n  |> filter(fn: (r) => r._field == \"value\")\n  |> filter(fn: (r) => r.machine_id =~ /^${machine:regex}$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "rotrpm" } }
+    },
+    {
+      "id": 3,
+      "title": "Pressure Trend",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"iot\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sensor_readings\")\n  |> filter(fn: (r) => r.metric == \"pressure\")\n  |> filter(fn: (r) => r._field == \"value\")\n  |> filter(fn: (r) => r.machine_id =~ /^${machine:regex}$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "pressurebar" } }
+    },
+    {
+      "id": 4,
+      "title": "Machine Comparison — Avg Temperature",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"iot\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sensor_readings\")\n  |> filter(fn: (r) => r.metric == \"temperature\")\n  |> filter(fn: (r) => r._field == \"value\")\n  |> group(columns: [\"machine_id\"])\n  |> mean()"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "celsius" } }
+    },
+    {
+      "id": 5,
+      "title": "Machine Comparison — Avg Energy (OPC-UA)",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"iot\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua_energy\")\n  |> filter(fn: (r) => r._field == \"energy_kwh\")\n  |> group(columns: [\"machine_id\"])\n  |> mean()"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "kwatth" } }
+    }
+  ],
+  "schemaVersion": 39
+}

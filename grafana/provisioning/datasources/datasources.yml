@@ -1,0 +1,27 @@
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB
+    uid: influxdb
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    jsonData:
+      version: Flux
+      organization: factory
+      defaultBucket: iot
+    secureJsonData:
+      token: $__env{INFLUXDB_TOKEN}
+    isDefault: true
+
+  - name: PostgreSQL
+    uid: postgresql
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    user: $__env{POSTGRES_USER}
+    jsonData:
+      database: $__env{POSTGRES_DB}
+      sslmode: disable
+    secureJsonData:
+      password: $__env{POSTGRES_PASSWORD}
