@@ -8,52 +8,7 @@ A fully containerized Industrial IoT data pipeline that simulates factory sensor
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    subgraph Sources
-        SIM["Simulator\n(5 CNC machines)"]
-        OPCUA["OPC-UA Server\n(status + energy)"]
-        CSV["ERP CSV\n(production data)"]
-    end
-
-    subgraph Broker
-        MQTT["Mosquitto\n:1883"]
-    end
-
-    subgraph Processing
-        NR["Node-RED\n:1880"]
-        ING["Ingestion\n(Pydantic + Pandas)"]
-        AD["Anomaly Detector\n(Z-score)"]
-    end
-
-    subgraph Storage
-        INFLUX["InfluxDB 2.x\n:8086"]
-        PG["PostgreSQL 16\n:5432"]
-        MINIO["MinIO\n:9000"]
-    end
-
-    subgraph Presentation
-        GF["Grafana\n:3000\n(4 dashboards)"]
-        API["FastAPI\n:8000\n(/docs)"]
-    end
-
-    SIM -->|"MQTT publish\nfactory/machine-{id}/{metric}"| MQTT
-    MQTT -->|"subscribe factory/#"| NR
-    NR -->|"write sensor_readings"| INFLUX
-    OPCUA -->|"write opcua_status\n+ opcua_energy"| INFLUX
-    CSV --> ING
-    ING -->|"validated records"| PG
-    ING -->|"archive raw CSV"| MINIO
-    ING -->|"quality issues"| PG
-    INFLUX --> AD
-    AD -->|"write anomalies"| INFLUX
-    INFLUX --> GF
-    PG --> GF
-    INFLUX --> API
-    PG --> API
-    GF -->|"alert webhook"| API
-    API -->|"log alerts"| PG
-```
+![Architecture: Industrial IoT Data Pipeline on Docker](docs/architecture.png)
 
 ## Tech Stack
 
